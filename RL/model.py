@@ -18,7 +18,7 @@ batch_size = 64
 lr = 0.00025
 epsilon = 0.9
 gamma = 0.1
-target_replace_iter = 300
+target_replace_iter = 3000
 n_action = len(action_space)
 # print(n_action)
 # print(len(contents))
@@ -56,17 +56,17 @@ class Network(nn.Module):
 class DQN(object):
     def __init__(self):
         # self.device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
-        self.eval_net, self.target_net = Network(), Network()
+        self.eval_net, self.target_net = Network().cuda(), Network().cuda()
         # print(self.eval_net, self.target_net)
-        self.memory_capacity = 3000
+        self.memory_capacity = 30000
         self.memory_conter = 0
         self.learn_step_counter = 0
-        self.memory = np.zeros((self.memory_capacity, n_state * 2 + 2))
+        self.memory = np.zeros((self.memory_capacity, n_state * 2 + 3))
         self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr)
         self.loss_func = nn.MSELoss()
 
-    def store_transition(self, s, a, r, s_):
-        transition = np.hstack((s, [a, r], s_))
+    def store_transition(self, s, a, r, s_, done):
+        transition = np.hstack((s, [a, r], s_, done))
 
         # replace the old memory with new memory
         index = self.memory_conter % self.memory_capacity
@@ -75,13 +75,13 @@ class DQN(object):
         self.memory_conter += 1
 
     def choose_action(self, x):
-        x = Variable(torch.unsqueeze(torch.FloatTensor(x), 0))
+        x = Variable(torch.unsqueeze(torch.FloatTensor(x), 0)).cuda()
         # action_value_prob = self.eval_net.forward(x)
         # action = np.random.choice(range(action_value_prob.shape[1]), p=action_value_prob.detach().numpy().ravel())
         # print(action)
         if np.random.uniform() < epsilon:
             action_value = self.eval_net.forward(x)
-            action_value = action_value.detach().numpy()
+            action_value = action_value.cpu().detach().numpy()
         #     # print(action_value)
         #     # print(np.argmax(action_value, 1))
             action = np.argmax(action_value, 1)[0]
@@ -104,14 +104,16 @@ class DQN(object):
         sample_index = np.random.choice(self.memory_capacity, batch_size)
         b_memory = self.memory[sample_index, :]
         # print(b_memory)
-        b_s = Variable(torch.Tensor(b_memory[:, :n_state]))
+        b_s = Variable(torch.Tensor(b_memory[:, :n_state])).cuda()
         # print(b_s.shape)
-        b_a = Variable(torch.LongTensor(b_memory[:, n_state:n_state+1].astype(int)))
+        b_a = Variable(torch.LongTensor(b_memory[:, n_state:n_state+1].astype(int))).cuda()
         # print(b_a)
-        b_r = Variable(torch.FloatTensor(b_memory[:, n_state+1:n_state+2]))
+        b_r = Variable(torch.FloatTensor(b_memory[:, n_state+1:n_state+2])).cuda()
         # print(b_r)
-        b_s_ = Variable(torch.FloatTensor(b_memory[:, -n_state:]))
+        b_s_ = Variable(torch.FloatTensor(b_memory[:, n_state+2:-1])).cuda()
         # print(b_s_.shape)
+        b_done = Variable(torch.FloatTensor(b_memory[:, -1:])).cuda()
+        # print(b_done)
 
         q_eval = self.eval_net(b_s).gather(1, b_a)
         # print(self.eval_net(b_s))
